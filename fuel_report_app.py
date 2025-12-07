@@ -37,7 +37,6 @@ def extract_department_id(text):
         return None
     
     # חיפוש תבנית: 5 ספרות ליד המילה מחלקה או הפוך
-    # דוגמא: "30063 : מחלקה" או "מחלקה : 30063"
     match = re.search(r'(\d{5})\s*[:]?\s*מחלקה', text)
     if not match:
         match = re.search(r'מחלקה\s*[:]?\s*(\d{5})', text)
@@ -75,7 +74,6 @@ def process_pdf(uploaded_file):
             if dept_id:
                 current_dept = dept_id
             
-            # אם הדף הראשון ואין מחלקה, נשאר UNKNOWN
             if current_dept not in dept_pages:
                 dept_pages[current_dept] = []
             
@@ -83,9 +81,7 @@ def process_pdf(uploaded_file):
             pypdf_page = reader.pages[i]
             
             # חיתוך 40 נקודות מלמטה (Footer removal)
-            # משנה את נקודת ההתחלה התחתונה ב-40 יחידות
             current_lower_left = pypdf_page.cropbox.lower_left
-            # PyPDF2: (0,0) הוא הפינה השמאלית התחתונה
             pypdf_page.cropbox.lower_left = (current_lower_left[0], current_lower_left[1] + 40)
             
             dept_pages[current_dept].append(pypdf_page)
@@ -112,49 +108,48 @@ if uploaded_file is not None:
             with st.spinner('מבצע פיצול וניתוח... נא להמתין'):
                 dept_map = process_pdf(uploaded_file)
             
-            # בדיקה אם זוהו מחלקות
+            # 1. בדיקה אם זוהו מחלקות. משתמשים ב-if/else במקום return.
             if not dept_map:
                 st.warning("לא נמצאו נתונים לעיבוד. ודא שהקובץ אינו ריק או מוגן.")
-                return
-
-            st.success(f"העיבוד הסתיים! זוהו {len(dept_map)} קבצים מפוצלים.")
-            
-            # יצירת קובץ ZIP בזיכרון
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w") as zip_file:
-                total_pages_processed = 0
-                for dept, pages in dept_map.items():
-                    writer = PdfWriter()
-                    for page in pages:
-                        writer.add_page(page)
-                    
-                    # שמירת PDF בודד לזיכרון
-                    pdf_out = io.BytesIO()
-                    writer.write(pdf_out)
-                    
-                    # הוספה ל-ZIP
-                    zip_file.writestr(f"{dept}.pdf", pdf_out.getvalue())
-                    total_pages_processed += len(pages)
-            
-            # כפתור הורדה
-            st.download_button(
-                label="📥 הורד את כל הקבצים (ZIP)",
-                data=zip_buffer.getvalue(),
-                file_name="split_reports.zip",
-                mime="application/zip"
-            )
-            
-            # הצגת סטטיסטיקה
-            st.divider()
-            st.subheader("📊 סיכום דפים לפי מחלקה:")
-            st.markdown(f"**סה״כ עמודים שעובדו:** {total_pages_processed}")
-            
-            stats_list = [{"מחלקה": k, "עמודים": len(v)} for k, v in dept_map.items()]
-            st.table(stats_list)
+            else:
+                # 2. אם נמצאו מחלקות, ממשיכים בלוגיקת יצירת ה-ZIP וההורדה
+                st.success(f"העיבוד הסתיים! זוהו {len(dept_map)} קבצים מפוצלים.")
+                
+                # יצירת קובץ ZIP בזיכרון
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+                    total_pages_processed = 0
+                    for dept, pages in dept_map.items():
+                        writer = PdfWriter()
+                        for page in pages:
+                            writer.add_page(page)
+                        
+                        # שמירת PDF בודד לזיכרון
+                        pdf_out = io.BytesIO()
+                        writer.write(pdf_out)
+                        
+                        # הוספה ל-ZIP
+                        zip_file.writestr(f"{dept}.pdf", pdf_out.getvalue())
+                        total_pages_processed += len(pages)
+                
+                # כפתור הורדה
+                st.download_button(
+                    label="📥 הורד את כל הקבצים (ZIP)",
+                    data=zip_buffer.getvalue(),
+                    file_name="split_reports.zip",
+                    mime="application/zip"
+                )
+                
+                # הצגת סטטיסטיקה
+                st.divider()
+                st.subheader("📊 סיכום דפים לפי מחלקה:")
+                st.markdown(f"**סה״כ עמודים שעובדו:** {total_pages_processed}")
+                
+                stats_list = [{"מחלקה": k, "עמודים": len(v)} for k, v in dept_map.items()]
+                st.table(stats_list)
 
         except Exception as e:
             # הצגת שגיאה ברורה למשתמש
-            st.error("אירעה שגיאה במהלך העיבוד. אנא ודא שהקובץ הוא PDF רגיל (לא סריקה) ואינו מוגן בסיסמה.")
-            # הדפסת השגיאה המלאה לקונסול כדי שאתה תוכל לראות אותה
+            st.error("אירעה שגיאה קריטית במהלך העיבוד. אנא ודא שהקובץ תקין ונסה שוב.")
+            # הדפסת השגיאה המלאה לקונסול
             st.exception(e)
-
