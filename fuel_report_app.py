@@ -11,13 +11,16 @@ st.set_page_config(page_title="מערכת פיצול דוחות דלק", page_ic
 
 st.markdown("""
 <style>
+    /* הגדרת כיוון כללי מימין לשמאל */
     .stApp {
         direction: rtl;
         text-align: right;
     }
-    .stMarkdown, .stFileUploader, .stButton, .stDownloadButton {
+    /* יישור כל רכיבי הטקסט, העלאה וכפתורים לימין */
+    .stMarkdown, .stFileUploader, .stButton, .stDownloadButton, div[data-testid^="stBlock"] {
         text-align: right;
     }
+    /* יישור תווית מעלה קובץ לימין */
     div[data-testid="stFileUploader"] label {
         justify-content: flex-end;
         width: 100%;
@@ -26,13 +29,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- לוגיקה עסקית (אותו קוד Python, מותאם לזיכרון במקום לדיסק) ---
+# --- לוגיקה עסקית ---
 
 def extract_department_id(text):
     """מחלץ מספר מחלקה (5 ספרות) מתוך טקסט"""
     if not text:
         return None
-    # חיפוש תבנית: 5 ספרות ליד המילה מחלקה
+    
+    # חיפוש תבנית: 5 ספרות ליד המילה מחלקה או הפוך
+    # דוגמא: "30063 : מחלקה" או "מחלקה : 30063"
     match = re.search(r'(\d{5})\s*[:]?\s*מחלקה', text)
     if not match:
         match = re.search(r'מחלקה\s*[:]?\s*(\d{5})', text)
@@ -56,53 +61,68 @@ def process_pdf(uploaded_file):
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    # שימוש ב-pdfplumber לקריאת טקסט (מדויק יותר בעברית)
+    # שימוש ב-pdfplumber לקריאת טקסט
     with pdfplumber.open(input_stream) as pdf:
         for i, page in enumerate(pdf.pages):
             # עדכון סטטוס
             progress_bar.progress((i + 1) / total_pages)
-            status_text.text(f"מעבד עמוד {i+1} מתוך {total_pages}...")
+            status_text.text(f"מעבד עמוד {i+1} מתוך {total_pages}... (מחלקה נוכחית: {current_dept})")
 
             text = page.extract_text()
             dept_id = extract_department_id(text)
             
-            # לוגיקת שיוך מחלקה
+            # לוגיקת שיוך מחלקה (Carry-Forward)
             if dept_id:
                 current_dept = dept_id
             
+            # אם הדף הראשון ואין מחלקה, נשאר UNKNOWN
             if current_dept not in dept_pages:
                 dept_pages[current_dept] = []
             
             # חיתוך (Cropping) - עבודה עם PyPDF2
             pypdf_page = reader.pages[i]
             
-            # חיתוך 40 נקודות מלמטה (Footer)
-            # הערה: זה עובד על הקובץ בזיכרון, לא משנה את המקור
+            # חיתוך 40 נקודות מלמטה (Footer removal)
+            # משנה את נקודת ההתחלה התחתונה ב-40 יחידות
             current_lower_left = pypdf_page.cropbox.lower_left
+            # PyPDF2: (0,0) הוא הפינה השמאלית התחתונה
             pypdf_page.cropbox.lower_left = (current_lower_left[0], current_lower_left[1] + 40)
             
             dept_pages[current_dept].append(pypdf_page)
-
+            
+    # מנקה את פס ההתקדמות לאחר סיום
+    progress_bar.empty()
+    status_text.empty()
+    
     return dept_pages
 
 # --- ממשק משתמש (UI) ---
 
 st.title("⛽ מערכת פיצול דוחות צריכה")
-st.write("אנא העלה את קובץ ה-PDF המרוכז. המערכת תפצל אותו למחלקות, תסיר את מספרי העמודים ותכין קובץ ZIP להורדה.")
+st.write("אנא העלה את קובץ ה-PDF המרוכז. המערכת תפצל אותו לפי מספרי מחלקות (5 ספרות), תסיר את מספרי העמודים ותכין קובץ ZIP להורדה.")
 
 uploaded_file = st.file_uploader("בחר קובץ PDF", type=["pdf"])
 
 if uploaded_file is not None:
-    if st.button("התחל עיבוד 🚀"):
+    # מציג את השם של הקובץ שהועלה
+    st.info(f"הקובץ הועלה בהצלחה: **{uploaded_file.name}**")
+    
+    if st.button("התחל עיבוד 🚀", key="process_button"):
         try:
             with st.spinner('מבצע פיצול וניתוח... נא להמתין'):
                 dept_map = process_pdf(uploaded_file)
             
-            st.success(f"העיבוד הסתיים! זוהו {len(dept_map)} מחלקות.")
+            # בדיקה אם זוהו מחלקות
+            if not dept_map:
+                st.warning("לא נמצאו נתונים לעיבוד. ודא שהקובץ אינו ריק או מוגן.")
+                return
+
+            st.success(f"העיבוד הסתיים! זוהו {len(dept_map)} קבצים מפוצלים.")
             
             # יצירת קובץ ZIP בזיכרון
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+                total_pages_processed = 0
                 for dept, pages in dept_map.items():
                     writer = PdfWriter()
                     for page in pages:
@@ -114,6 +134,7 @@ if uploaded_file is not None:
                     
                     # הוספה ל-ZIP
                     zip_file.writestr(f"{dept}.pdf", pdf_out.getvalue())
+                    total_pages_processed += len(pages)
             
             # כפתור הורדה
             st.download_button(
@@ -125,105 +146,15 @@ if uploaded_file is not None:
             
             # הצגת סטטיסטיקה
             st.divider()
-            st.subheader("📊 סיכום דפים:")
-            stats = {k: len(v) for k, v in dept_map.items()}
-            st.json(stats)
+            st.subheader("📊 סיכום דפים לפי מחלקה:")
+            st.markdown(f"**סה״כ עמודים שעובדו:** {total_pages_processed}")
+            
+            stats_list = [{"מחלקה": k, "עמודים": len(v)} for k, v in dept_map.items()]
+            st.table(stats_list)
 
         except Exception as e:
-            st.error(f"אירעה שגיאה: {e}")
+            # הצגת שגיאה ברורה למשתמש
+            st.error("אירעה שגיאה במהלך העיבוד. אנא ודא שהקובץ הוא PDF רגיל (לא סריקה) ואינו מוגן בסיסמה.")
+            # הדפסת השגיאה המלאה לקונסול כדי שאתה תוכל לראות אותה
+            st.exception(e)
 
-איך מפעילים את זה? (חינם לגמרי)
-אין צורך בהתקנות על המחשב.
- * הירשם לאתר Streamlit Community Cloud (חיבור דרך GitHub).
- * צור מאגר (Repository) חדש ב-GitHub ושים בו את הקובץ fuel_report_app.py וקובץ נוסף בשם requirements.txt שמכיל את השורות הבאות:
-   streamlit
-pdfplumber
-pypdf2
-
- * באתר של Streamlit, לחץ על "New App", בחר את המאגר שיצרת.
- * זהו! יש לך לינק (URL) לאפליקציה שאתה יכול לשלוח למזכירה/מנהל חשבונות. הם נכנסים מהדפדפן ועובדים.
-אפשרות ב': Google Colab בתצורת "טופס" (Form Mode)
-אם אתה מעדיף להישאר אך ורק בתוך גוגל ולא לפתוח חשבונות חיצוניים, אפשר להשתמש ב-Colab אבל להסתיר את הקוד כך שזה ייראה כמו טופס.
- * פותחים מחברת Colab חדשה.
- * מדביקים את הקוד הבא.
- * בתפריט העליון בוחרים: View -> Show/hide code (כדי להסתיר את הקוד המפחיד).
- * המשתמש רק לוחץ על כפתור ה-Play הקטן בצד.
-# @title ⛽ כלי פיצול דוחות דלק
-# @markdown לחץ על כפתור ה-Play משמאל כדי להפעיל את הכלי.
-# @markdown <br>לאחר הלחיצה, יופיע כפתור להעלאת הקובץ.
-
-import os
-import re
-import zipfile
-import io
-from google.colab import files
-from PyPDF2 import PdfReader, PdfWriter
-
-# התקנת ספריות חסרות (רץ אוטומטית)
-try:
-    import pdfplumber
-except ImportError:
-    print("מתקין רכיבים נדרשים...")
-    !pip install -q pdfplumber
-    import pdfplumber
-
-def split_and_download():
-    print("אנא העלה את קובץ ה-PDF...")
-    uploaded = files.upload()
-    
-    if not uploaded:
-        print("לא נבחר קובץ.")
-        return
-
-    filename = next(iter(uploaded))
-    print(f"מעבד את הקובץ: {filename}...")
-
-    # פתיחת הקובץ
-    reader = PdfReader(io.BytesIO(uploaded[filename]))
-    
-    dept_pages = {}
-    current_dept = "UNKNOWN"
-    
-    # שימוש ב-pdfplumber לקריאת טקסט
-    with pdfplumber.open(io.BytesIO(uploaded[filename])) as pdf:
-        total = len(pdf.pages)
-        for i, page in enumerate(pdf.pages):
-            text = page.extract_text()
-            
-            # זיהוי מחלקה
-            match = re.search(r'(\d{5})\s*[:]?\s*מחלקה', text) or re.search(r'מחלקה\s*[:]?\s*(\d{5})', text)
-            if match:
-                current_dept = match.group(1)
-            
-            if current_dept not in dept_pages:
-                dept_pages[current_dept] = []
-            
-            # חיתוך
-            pypdf_page = reader.pages[i]
-            curr_bottom = pypdf_page.cropbox.lower_left
-            pypdf_page.cropbox.lower_left = (curr_bottom[0], curr_bottom[1] + 40)
-            
-            dept_pages[current_dept].append(pypdf_page)
-            print(f"\rמעבד עמוד {i+1}/{total}", end="")
-
-    print("\nיוצר קובץ ZIP...")
-    
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w") as zf:
-        for dept, pages in dept_pages.items():
-            pdf_out = io.BytesIO()
-            writer = PdfWriter()
-            for p in pages:
-                writer.add_page(p)
-            writer.write(pdf_out)
-            zf.writestr(f"{dept}.pdf", pdf_out.getvalue())
-
-    # שמירה לדיסק של קולאב והורדה אוטומטית
-    with open("split_reports.zip", "wb") as f:
-        f.write(zip_buffer.getvalue())
-    
-    files.download("split_reports.zip")
-    print("\n✅ הסתיים! ההורדה תתחיל מיד.")
-
-# הרצת הפונקציה
-split_and_download()
