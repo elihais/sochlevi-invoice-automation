@@ -19,14 +19,20 @@ st.markdown("""
         padding: 1rem;
     }
     
-    /* ---------------------- 2. תיקון צבע טקסט (חשוב!) ---------------------- */
-    /* מכריח טקסט להיות כהה (#333333) על רקע בהיר, עוקף את הגדרות Streamlit */
+    /* ---------------------- 2. תיקון צבע טקסט (פתרון חובה עם !important) ---------------------- */
+    /* מכריח טקסט להיות כהה (#333333) על רקע בהיר, עוקף את הגדרות Streamlit בכל מקום אפשרי */
     .stApp, 
     .stApp p, 
     .stApp span, 
     .stMarkdown,
-    div[data-testid^="stBlock"] > div > div > p,
-    div[data-testid^="stBlock"] > div > p {
+    div[data-testid^="stBlock"] * , /* מכוון לכל תוכן בתוך בלוקים */
+    div[data-testid^="stFileUploader"] label, /* תווית העלאת קובץ */
+    div[data-testid="stFileUploader"] p,
+    .stAlert p,
+    div[data-testid="stAlert"] * ,
+    .stSpinner p,
+    .stDownloadButton p,
+    .stTable .dataframe * {
         color: #333333 !important;
     }
 
@@ -48,6 +54,7 @@ st.markdown("""
         width: 100%;
         display: flex;
         font-size: 1.1rem;
+        /* צבע הטקסט כאן מכוון שוב למעלה */
     }
     
     /* ---------------------- 3. Liquid Glass Card ---------------------- */
@@ -70,7 +77,7 @@ st.markdown("""
     /* כפתורים מודרניים */
     .stButton>button, .stDownloadButton>button {
         background-color: #1f78b4;
-        color: white;
+        color: white !important; /* לוודא שהטקסט בתוך הכפתור לבן */
         border-radius: 8px;
         border: none;
         padding: 0.5rem 1.5rem;
@@ -80,16 +87,6 @@ st.markdown("""
     .stButton>button:hover, .stDownloadButton>button:hover {
         background-color: #0b5585;
         box-shadow: 0 2px 8px rgba(31, 120, 180, 0.5);
-    }
-    
-    /* הטקסט בתוך הודעות מידע ואזהרה - כהה וברור */
-    div[data-testid="stAlert"] * {
-        color: #333333 !important;
-    }
-    
-    /* הטבלה (st.table) - לוודא כיתוב כהה */
-    .dataframe th, .dataframe td {
-        color: #333333 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -109,23 +106,20 @@ def extract_metadata(pdf_bytes):
         first_page_text = pdf.pages[0].extract_text()
         
         # 1. מספר לקוח (Customer ID) - מחפש: לקוח [רווחים/נקודתיים אופציונליים] [מספר]
-        # מנסה להתמודד עם: 'לקוח : 13548'
         customer_id_match = re.search(r'לקוח\s*[:]?\s*(\d+)', first_page_text)
         customer_id = customer_id_match.group(1) if customer_id_match else "99999" 
         
         # 2. מספר דו"ח (Invoice Number) - מחפש: מס' דו"ח [רווחים/נקודתיים אופציונליים] [מספר]
-        # מנסה להתמודד עם: 'מס' דו"ח : 20001' או 'מס' דו"ח:20001'
         invoice_num_match = re.search(r'מס\' דו"ח\s*[:]?\s*(\d+)', first_page_text)
         invoice_num = invoice_num_match.group(1) if invoice_num_match else "0000" 
         
-        # 3. חודש ושנה (Month and Year) - מחפש: תאריך הפקת דו"ח [רווחים/נקודתיים אופציונליים] [תאריך]
-        # מנסה להתמודד עם: 'תאריך הפקת דו"ח :11/12/2025'
+        # 3. חודש ושנה (Month and Year) - תיקון האינדקס: group(2) הוא החודש, group(3) הוא השנה
+        # תבנית: X/Y/Z (יום/חודש/שנה)
         date_match = re.search(r'תאריך הפקת דו"ח\s*[:]?\s*(\d{1,2})/(\d{1,2})/(\d{4})', first_page_text)
         
         if date_match:
-            # group(2) הוא החודש, group(3) היא השנה
-            month = date_match.group(2).zfill(2) 
-            year = date_match.group(3)
+            month = date_match.group(2).zfill(2) # אינדקס 2 הוא החודש
+            year = date_match.group(3)          # אינדקס 3 הוא השנה
             date_str = f"{month}-{year}"
         else:
             date_str = "00-0000"
@@ -137,13 +131,13 @@ def extract_department_id(text):
     if not text:
         return None
     
-    # חיפוש גמיש: [5 ספרות] סמוך למילה 'מחלקה' (עם נקודתיים או רווחים ביניהם).
-    # במקרה של 'מחלקה : 37133 37133', נרצה לתפוס רק את המופע הראשון
+    # חיפוש גמיש: [5 ספרות] סמוך למילה 'מחלקה'
+    # הדגש הוא על תפיסת המופע הראשון של 5 ספרות אחרי "מחלקה"
     match = re.search(r'מחלקה\s*[:]?\s*(\d{5})', text)
     if match:
         return match.group(1)
         
-    # חיפוש חלופי: [5 ספרות] לפני המילה 'מחלקה' (פחות סביר אבל נשמר)
+    # חיפוש חלופי (פחות סביר): [5 ספרות] לפני המילה 'מחלקה'
     match = re.search(r'(\d{5})\s*[:]?\s*מחלקה', text)
     if match:
         return match.group(1)
@@ -170,15 +164,13 @@ def process_pdf(pdf_bytes):
             progress_bar.progress((i + 1) / total_pages)
             status_text.text(f"מעבד עמוד {i+1} מתוך {total_pages}... (מחלקה נוכחית: {current_dept})")
 
-            # הגדלנו את גובה החיתוך העליון כדי לוודא ששורות הכותרת נכללות היטב
+            # חילוץ טקסט
             text = page.extract_text(y_tolerance=3) 
             dept_id = extract_department_id(text)
             
             # לוגיקת שיוך מחלקה (Carry-Forward)
             if dept_id:
-                # אם נמצאה מחלקה חדשה, היא הופכת להיות הנוכחית
                 current_dept = dept_id
-            # אם לא נמצאה מחלקה, נשארים עם הקודמת (או UNKNOWN)
             
             if current_dept not in dept_pages:
                 dept_pages[current_dept] = []
@@ -280,13 +272,18 @@ if uploaded_file is not None:
                 st.subheader("סיכום דפים:")
                 st.markdown(f"**סה״כ עמודים שעובדו:** {total_pages_processed}")
                 
-                stats_list = [{"מחלקה": k, "עמודים": len(v)} for k, v in dept_map.items()]
+                stats_list = [{"מחלקה": k, "עמודים": len(v)} for k, v in dept_map.items() if k != "UNKNOWN"]
                 
                 # אם היו דפים ללא מחלקה (Unknown), נוסיף אותם לטבלה
                 if 'unknown_pages' in locals() and unknown_pages:
-                    stats_list.insert(0, {"מחלקה": "דפים ללא מחלקה", "עמודים": len(unknown_pages)})
+                    stats_list.insert(0, {"מחלקה": "דפים ללא מחלקה (UNKNOWN)", "עמודים": len(unknown_pages)})
                     
-                st.table(stats_list)
+                # מציג את הטבלה רק אם יש נתונים קריאים
+                if stats_list:
+                    st.table(stats_list)
+                else:
+                    st.info("לא זוהו מחלקות ספציפיות בדוח.")
+
 
         except Exception as e:
             # הצגת שגיאה ברורה למשתמש
