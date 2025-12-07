@@ -6,30 +6,80 @@ import io
 import os
 from PyPDF2 import PdfReader, PdfWriter
 
-# --- הגדרות עיצוב (RTL לעברית) ---
+# --- הגדרות עיצוב (RTL & Liquid Glass/Minimalism) ---
 st.set_page_config(page_title="מערכת פיצול דוחות דלק", page_icon="⛽", layout="centered")
 
 st.markdown("""
 <style>
-    /* הגדרת כיוון כללי מימין לשמאל */
+    /* ---------------------- 1. RTL & יישור גלובלי ---------------------- */
     .stApp {
         direction: rtl;
         text-align: right;
+        background-color: #f0f2f6; /* רקע בהיר ונקי */
+        padding: 1rem;
     }
-    /* יישור כל רכיבי הטקסט, העלאה וכפתורים לימין */
+    
+    /* יישור מרכזי לכותרת העליונה */
+    h1 {
+        text-align: center;
+        width: 100%;
+        color: #1f78b4; /* כחול נקי */
+    }
+
+    /* יישור כל רכיבי הטקסט, העלאה, כפתורים וטבלאות לימין */
     .stMarkdown, .stFileUploader, .stButton, .stDownloadButton, div[data-testid^="stBlock"] {
         text-align: right;
     }
+    
+    /* כותרת משנה ומלל רגיל */
+    h2, h3, h4 {
+        color: #333333;
+    }
+
     /* יישור תווית מעלה קובץ לימין */
     div[data-testid="stFileUploader"] label {
         justify-content: flex-end;
         width: 100%;
         display: flex;
+        font-size: 1.1rem;
+    }
+    
+    /* ---------------------- 2. Liquid Glass Card ---------------------- */
+    /* מעטפת כרטיס סביב היישום הראשי */
+    .block-container {
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
+        max-width: 700px; /* רוחב מוגבל במרכז */
+        
+        /* אפקט זכוכית עדין */
+        background: rgba(255, 255, 255, 0.6);
+        border-radius: 16px;
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    /* כפתורים מודרניים */
+    .stButton>button, .stDownloadButton>button {
+        background-color: #1f78b4;
+        color: white;
+        border-radius: 8px;
+        border: none;
+        padding: 0.5rem 1.5rem;
+        transition: all 0.2s ease-in-out;
+        font-weight: bold;
+    }
+    .stButton>button:hover, .stDownloadButton>button:hover {
+        background-color: #0b5585;
+        box-shadow: 0 2px 8px rgba(31, 120, 180, 0.5);
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- לוגיקה עסקית: חילוץ נתונים כלליים ---
+# --- לוגיקה עסקית: חילוץ נתונים כלליים (תבניות רגולריות מתוקנות) ---
 
 def extract_metadata(pdf_bytes):
     """
@@ -39,7 +89,7 @@ def extract_metadata(pdf_bytes):
     
     with pdfplumber.open(input_stream) as pdf:
         if not pdf.pages:
-            return "99999", "0000", "00-0000"
+            return "99999", "0000", "00-0000", ""
         
         first_page_text = pdf.pages[0].extract_text()
         
@@ -47,15 +97,15 @@ def extract_metadata(pdf_bytes):
         customer_id_match = re.search(r'לקוח\s*:\s*(\d+)', first_page_text)
         customer_id = customer_id_match.group(1) if customer_id_match else "99999" 
         
-        # 2. מספר דו"ח (Invoice Number) - מחפש: מס' דו"ח : [4 ספרות ומעלה]
-        invoice_num_match = re.search(r'מס\' דו"ח\s*:\s*(\d+)', first_page_text)
+        # 2. מספר דו"ח (Invoice Number) - תבנית מתוקנת לרווחים אופציונליים
+        invoice_num_match = re.search(r'מס\' דו"ח:?\s*(\d+)', first_page_text)
         invoice_num = invoice_num_match.group(1) if invoice_num_match else "0000" 
         
-        # 3. חודש ושנה (Month and Year from the report date) - מחפש תאריך בפורמט DD/MM/YYYY
-        date_match = re.search(r'תאריך הפקת דו"ח\s*:\s*(\d{1,2})/(\d{1,2})/(\d{4})', first_page_text)
+        # 3. חודש ושנה (Month and Year from the report date) - תבנית מתוקנת לרווחים אופציונליים
+        date_match = re.search(r'תאריך הפקת דו"ח:?\s*(\d{1,2})/(\d{1,2})/(\d{4})', first_page_text)
         
         if date_match:
-            month = date_match.group(2)
+            month = date_match.group(2).zfill(2) # מוודא שני ספרות לחודש
             year = date_match.group(3)
             date_str = f"{month}-{year}"
         else:
@@ -69,7 +119,6 @@ def extract_department_id(text):
         return None
     
     # חיפוש תבנית: 5 ספרות ליד המילה מחלקה או הפוך
-    # דוגמא: "30063 : מחלקה" או "מחלקה : 30063"
     match = re.search(r'(\d{5})\s*[:]?\s*מחלקה', text)
     if not match:
         match = re.search(r'מחלקה\s*[:]?\s*(\d{5})', text)
@@ -127,8 +176,8 @@ def process_pdf(pdf_bytes):
 
 # --- ממשק משתמש (UI) ---
 
-st.title("⛽ מערכת פיצול דוחות צריכה")
-st.write("אנא העלה את קובץ ה-PDF המרוכז. המערכת תפצל אותו לפי מספרי מחלקות (5 ספרות), תסיר את מספרי העמודים ותכין קובץ ZIP להורדה.")
+st.title("⛽ דוחות דלק - מערכת פיצול")
+st.write("אנא העלה את קובץ ה-PDF המרוכז. המערכת תפצל אותו לפי מספרי מחלקות (5 ספרות), תסיר את כותרת התחתונה ותכין קובץ ZIP להורדה.")
 
 uploaded_file = st.file_uploader("בחר קובץ PDF", type=["pdf"])
 
@@ -137,13 +186,15 @@ if uploaded_file is not None:
     pdf_bytes = uploaded_file.getvalue()
     st.info(f"הקובץ הועלה בהצלחה: **{uploaded_file.name}**")
     
-    if st.button("התחל עיבוד 🚀", key="process_button"):
+    # שינוי: הסרתי את האימוג'י מכפתור העיבוד למען העיצוב המינימליסטי
+    if st.button("התחל עיבוד", key="process_button"):
         try:
             # 1. חילוץ מטא-דאטה ראשונית
             customer_id, invoice_num, date_str, first_page_text = extract_metadata(pdf_bytes)
 
-            if customer_id == "99999" or invoice_num == "0000":
-                st.warning("שים לב: לא ניתן היה לחלץ באופן מלא את מספר הלקוח או מספר הדו״ח מהעמוד הראשון. שם הקובץ יכלול ערכי ברירת מחדל.")
+            # בדיקה משופרת והצגת אזהרה אם נותרו ערכי ברירת מחדל
+            if customer_id == "99999" or invoice_num == "0000" or date_str == "00-0000":
+                st.warning("שים לב: לא ניתן היה לחלץ באופן מלא את מספר הלקוח, מספר הדו״ח או התאריך מהעמוד הראשון. שם הקובץ יכלול ערכי ברירת מחדל (99999/0000/00-0000).")
             
             with st.spinner('מבצע פיצול וניתוח... נא להמתין'):
                 dept_map = process_pdf(pdf_bytes)
@@ -153,18 +204,18 @@ if uploaded_file is not None:
                 st.warning("לא נמצאו דפים לעיבוד. ודא שהקובץ אינו ריק או מוגן בסיסמה.")
             else:
                 # 3. אם נמצאו מחלקות, ממשיכים בלוגיקת יצירת ה-ZIP וההורדה
-                st.success(f"העיבוד הסתיים! זוהו {len(dept_map)} קבצים מפוצלים.")
+                st.success(f"העיבוד הסתיים בהצלחה. זוהו {len(dept_map)} קבצים מפוצלים.")
                 
                 # יצירת קובץ ZIP בזיכרון
                 zip_buffer = io.BytesIO()
                 with zipfile.ZipFile(zip_buffer, "w") as zip_file:
                     total_pages_processed = 0
                     
-                    # הוספת קובץ דוח מרכז אם זוהה UNKNOWN
-                    if "UNKNOWN" in dept_map:
+                    # טיפול בדפי UNKNOWN
+                    unknown_pages = dept_map.pop("UNKNOWN", None)
+                    if unknown_pages:
                         st.info("נמצאו דפים ללא מספר מחלקה שקובצו תחת השם 'דפים_ללא_מחלקה'.")
-                        # נשמור אותם תחת שם מיוחד
-                        unknown_pages = dept_map.pop("UNKNOWN")
+                        
                         writer = PdfWriter()
                         for page in unknown_pages:
                             writer.add_page(page)
@@ -195,7 +246,7 @@ if uploaded_file is not None:
                 
                 # כפתור הורדה
                 st.download_button(
-                    label="📥 הורד את כל הקבצים (ZIP)",
+                    label="הורד את כל הקבצים (ZIP)",
                     data=zip_buffer.getvalue(),
                     file_name=f"מפוצל_{customer_id}_{date_str}_{invoice_num}.zip",
                     mime="application/zip"
@@ -203,13 +254,13 @@ if uploaded_file is not None:
                 
                 # הצגת סטטיסטיקה
                 st.divider()
-                st.subheader("📊 סיכום דפים לפי מחלקה:")
+                st.subheader("סיכום דפים:")
                 st.markdown(f"**סה״כ עמודים שעובדו:** {total_pages_processed}")
                 
                 stats_list = [{"מחלקה": k, "עמודים": len(v)} for k, v in dept_map.items()]
                 
                 # אם היו דפים ללא מחלקה (Unknown), נוסיף אותם לטבלה
-                if 'unknown_pages' in locals():
+                if 'unknown_pages' in locals() and unknown_pages:
                     stats_list.insert(0, {"מחלקה": "דפים ללא מחלקה", "עמודים": len(unknown_pages)})
                     
                 st.table(stats_list)
