@@ -17,26 +17,29 @@ st.markdown("""
         text-align: right;
         background-color: #f0f2f6; /* רקע בהיר ונקי */
         padding: 1rem;
-        /* --- התיקון לצבע הטקסט הראשי --- */
-        color: #333333; /* הגדרת צבע טקסט ראשי כהה לפתרון בעיית הלבן על לבן */
     }
     
-    /* יישור מרכזי לכותרת העליונה */
+    /* ---------------------- 2. תיקון צבע טקסט (חשוב!) ---------------------- */
+    /* מכריח טקסט להיות כהה (#333333) על רקע בהיר, עוקף את הגדרות Streamlit */
+    .stApp, 
+    .stApp p, 
+    .stApp span, 
+    .stMarkdown,
+    div[data-testid^="stBlock"] > div > div > p,
+    div[data-testid^="stBlock"] > div > p {
+        color: #333333 !important;
+    }
+
+    /* יישור מרכזי לכותרת העליונה וצבע כחול */
     h1 {
         text-align: center;
         width: 100%;
-        color: #1f78b4; /* כחול נקי */
+        color: #1f78b4 !important; /* כחול נקי */
     }
 
-    /* יישור כל רכיבי הטקסט, העלאה, כפתורים וטבלאות לימין */
-    .stMarkdown, .stFileUploader, .stButton, .stDownloadButton, div[data-testid^="stBlock"], .stException {
-        text-align: right;
-        color: #333333; /* ודוא שכל טקסט פנימי יהיה כהה */
-    }
-    
-    /* כותרת משנה ומלל רגיל */
-    h2, h3, h4 {
-        color: #333333;
+    /* כותרות משנה ואחרות - כהות */
+    h2, h3, h4, h5, h6 {
+        color: #333333 !important;
     }
 
     /* יישור תווית מעלה קובץ לימין */
@@ -47,8 +50,7 @@ st.markdown("""
         font-size: 1.1rem;
     }
     
-    /* ---------------------- 2. Liquid Glass Card ---------------------- */
-    /* מעטפת כרטיס סביב היישום הראשי */
+    /* ---------------------- 3. Liquid Glass Card ---------------------- */
     .block-container {
         padding-top: 2rem !important;
         padding-bottom: 2rem !important;
@@ -57,7 +59,7 @@ st.markdown("""
         max-width: 700px; /* רוחב מוגבל במרכז */
         
         /* אפקט זכוכית עדין */
-        background: rgba(255, 255, 255, 0.6);
+        background: rgba(255, 255, 255, 0.7);
         border-radius: 16px;
         box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
         backdrop-filter: blur(5px);
@@ -80,14 +82,19 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(31, 120, 180, 0.5);
     }
     
-    /* הטקסט בתוך הודעות מידע ואזהרה (כדי שלא יהיה לבן) */
+    /* הטקסט בתוך הודעות מידע ואזהרה - כהה וברור */
     div[data-testid="stAlert"] * {
+        color: #333333 !important;
+    }
+    
+    /* הטבלה (st.table) - לוודא כיתוב כהה */
+    .dataframe th, .dataframe td {
         color: #333333 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- לוגיקה עסקית: חילוץ נתונים כלליים (תבניות רגולריות מתוקנות) ---
+# --- לוגיקה עסקית: חילוץ נתונים כלליים (תבניות רגולריות משופרות) ---
 
 def extract_metadata(pdf_bytes):
     """
@@ -101,19 +108,23 @@ def extract_metadata(pdf_bytes):
         
         first_page_text = pdf.pages[0].extract_text()
         
-        # 1. מספר לקוח (Customer ID) - מחפש: לקוח : [5 ספרות ומעלה]
-        customer_id_match = re.search(r'לקוח\s*:\s*(\d+)', first_page_text)
+        # 1. מספר לקוח (Customer ID) - מחפש: לקוח [רווחים/נקודתיים אופציונליים] [מספר]
+        # מנסה להתמודד עם: 'לקוח : 13548'
+        customer_id_match = re.search(r'לקוח\s*[:]?\s*(\d+)', first_page_text)
         customer_id = customer_id_match.group(1) if customer_id_match else "99999" 
         
-        # 2. מספר דו"ח (Invoice Number) - תבנית מתוקנת לרווחים אופציונליים
-        invoice_num_match = re.search(r'מס\' דו"ח:?\s*(\d+)', first_page_text)
+        # 2. מספר דו"ח (Invoice Number) - מחפש: מס' דו"ח [רווחים/נקודתיים אופציונליים] [מספר]
+        # מנסה להתמודד עם: 'מס' דו"ח : 20001' או 'מס' דו"ח:20001'
+        invoice_num_match = re.search(r'מס\' דו"ח\s*[:]?\s*(\d+)', first_page_text)
         invoice_num = invoice_num_match.group(1) if invoice_num_match else "0000" 
         
-        # 3. חודש ושנה (Month and Year from the report date) - תבנית מתוקנת לרווחים אופציונליים
-        date_match = re.search(r'תאריך הפקת דו"ח:?\s*(\d{1,2})/(\d{1,2})/(\d{4})', first_page_text)
+        # 3. חודש ושנה (Month and Year) - מחפש: תאריך הפקת דו"ח [רווחים/נקודתיים אופציונליים] [תאריך]
+        # מנסה להתמודד עם: 'תאריך הפקת דו"ח :11/12/2025'
+        date_match = re.search(r'תאריך הפקת דו"ח\s*[:]?\s*(\d{1,2})/(\d{1,2})/(\d{4})', first_page_text)
         
         if date_match:
-            month = date_match.group(2).zfill(2) # מוודא שני ספרות לחודש
+            # group(2) הוא החודש, group(3) היא השנה
+            month = date_match.group(2).zfill(2) 
             year = date_match.group(3)
             date_str = f"{month}-{year}"
         else:
@@ -122,17 +133,21 @@ def extract_metadata(pdf_bytes):
         return customer_id, invoice_num, date_str, first_page_text
 
 def extract_department_id(text):
-    """מחלץ מספר מחלקה (5 ספרות) מתוך טקסט"""
+    """מחלץ מספר מחלקה (5 ספרות) מתוך טקסט - לוגיקה משופרת."""
     if not text:
         return None
     
-    # חיפוש תבנית: 5 ספרות ליד המילה מחלקה או הפוך
-    match = re.search(r'(\d{5})\s*[:]?\s*מחלקה', text)
-    if not match:
-        match = re.search(r'מחלקה\s*[:]?\s*(\d{5})', text)
-    
+    # חיפוש גמיש: [5 ספרות] סמוך למילה 'מחלקה' (עם נקודתיים או רווחים ביניהם).
+    # במקרה של 'מחלקה : 37133 37133', נרצה לתפוס רק את המופע הראשון
+    match = re.search(r'מחלקה\s*[:]?\s*(\d{5})', text)
     if match:
         return match.group(1)
+        
+    # חיפוש חלופי: [5 ספרות] לפני המילה 'מחלקה' (פחות סביר אבל נשמר)
+    match = re.search(r'(\d{5})\s*[:]?\s*מחלקה', text)
+    if match:
+        return match.group(1)
+        
     return None
 
 def process_pdf(pdf_bytes):
@@ -155,7 +170,8 @@ def process_pdf(pdf_bytes):
             progress_bar.progress((i + 1) / total_pages)
             status_text.text(f"מעבד עמוד {i+1} מתוך {total_pages}... (מחלקה נוכחית: {current_dept})")
 
-            text = page.extract_text()
+            # הגדלנו את גובה החיתוך העליון כדי לוודא ששורות הכותרת נכללות היטב
+            text = page.extract_text(y_tolerance=3) 
             dept_id = extract_department_id(text)
             
             # לוגיקת שיוך מחלקה (Carry-Forward)
@@ -170,7 +186,7 @@ def process_pdf(pdf_bytes):
             # חיתוך (Cropping) - עבודה עם PyPDF2
             pypdf_page = reader.pages[i]
             
-            # חיתוך 40 נקודות מלמטה (Footer removal)
+            # חיתוך 40 נקודות מלמטה (Footer removal - מספרי עמודים)
             current_lower_left = pypdf_page.cropbox.lower_left
             pypdf_page.cropbox.lower_left = (current_lower_left[0], current_lower_left[1] + 40)
             
@@ -277,4 +293,3 @@ if uploaded_file is not None:
             st.error("אירעה שגיאה קריטית במהלך העיבוד. אנא ודא שהקובץ תקין ונסה שוב.")
             # הדפסת השגיאה המלאה לקונסול
             st.exception(e)
-
