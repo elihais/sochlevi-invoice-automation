@@ -17,6 +17,8 @@ st.markdown("""
         text-align: right;
         background-color: #f0f2f6; /* רקע בהיר ונקי */
         padding: 1rem;
+        /* --- התיקון לצבע הטקסט הראשי --- */
+        color: #333333; /* הגדרת צבע טקסט ראשי כהה לפתרון בעיית הלבן על לבן */
     }
     
     /* יישור מרכזי לכותרת העליונה */
@@ -27,8 +29,9 @@ st.markdown("""
     }
 
     /* יישור כל רכיבי הטקסט, העלאה, כפתורים וטבלאות לימין */
-    .stMarkdown, .stFileUploader, .stButton, .stDownloadButton, div[data-testid^="stBlock"] {
+    .stMarkdown, .stFileUploader, .stButton, .stDownloadButton, div[data-testid^="stBlock"], .stException {
         text-align: right;
+        color: #333333; /* ודוא שכל טקסט פנימי יהיה כהה */
     }
     
     /* כותרת משנה ומלל רגיל */
@@ -75,6 +78,11 @@ st.markdown("""
     .stButton>button:hover, .stDownloadButton>button:hover {
         background-color: #0b5585;
         box-shadow: 0 2px 8px rgba(31, 120, 180, 0.5);
+    }
+    
+    /* הטקסט בתוך הודעות מידע ואזהרה (כדי שלא יהיה לבן) */
+    div[data-testid="stAlert"] * {
+        color: #333333 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -186,7 +194,6 @@ if uploaded_file is not None:
     pdf_bytes = uploaded_file.getvalue()
     st.info(f"הקובץ הועלה בהצלחה: **{uploaded_file.name}**")
     
-    # שינוי: הסרתי את האימוג'י מכפתור העיבוד למען העיצוב המינימליסטי
     if st.button("התחל עיבוד", key="process_button"):
         try:
             # 1. חילוץ מטא-דאטה ראשונית
@@ -270,3 +277,4 @@ if uploaded_file is not None:
             st.error("אירעה שגיאה קריטית במהלך העיבוד. אנא ודא שהקובץ תקין ונסה שוב.")
             # הדפסת השגיאה המלאה לקונסול
             st.exception(e)
+
